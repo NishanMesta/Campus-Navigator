@@ -152,18 +152,18 @@ export const NAVIGATION_NODES = [
   { id: 10, name: 'Medical Post', latitude: 13.167200, longitude: 77.535000, type: 'ENTRANCE' }
 ];
 
-// Graph Edges (Connections between nodes with weights)
+// Graph Edges (Connections between nodes with weights & footpath status)
 export const NAVIGATION_EDGES = [
-  { id: 1, from: 1, to: 2, distance: 100, walkable: true, accessible: true, stairs: false, pathType: 'MAIN_PAVED' },
-  { id: 2, from: 2, to: 10, distance: 40, walkable: true, accessible: true, stairs: false, pathType: 'PAVED' },
-  { id: 3, from: 2, to: 3, distance: 90, walkable: true, accessible: true, stairs: false, pathType: 'MAIN_PAVED' },
-  { id: 4, from: 3, to: 4, distance: 85, walkable: true, accessible: true, stairs: false, pathType: 'PAVED' },
-  { id: 5, from: 3, to: 6, distance: 75, walkable: true, accessible: true, stairs: false, pathType: 'PAVED' },
-  { id: 6, from: 4, to: 5, distance: 80, walkable: true, accessible: true, stairs: false, pathType: 'PAVED' },
-  { id: 7, from: 4, to: 8, distance: 120, walkable: true, accessible: true, stairs: false, pathType: 'PAVED' },
-  { id: 8, from: 5, to: 7, distance: 95, walkable: true, accessible: true, stairs: false, pathType: 'PAVED' },
-  { id: 9, from: 6, to: 7, distance: 90, walkable: true, accessible: false, stairs: true, pathType: 'STAIRS_SHORTCUT' },
-  { id: 10, from: 5, to: 9, distance: 110, walkable: true, accessible: true, stairs: false, pathType: 'PAVED' },
-  { id: 11, from: 7, to: 9, distance: 130, walkable: true, accessible: true, stairs: false, pathType: 'PAVED' },
-  { id: 12, from: 8, to: 5, distance: 140, walkable: true, accessible: true, stairs: false, pathType: 'PAVED' }
+  { id: 1, from: 1, to: 2, distance: 100, walkable: true, accessible: true, stairs: false, hasFootpath: true, pathType: 'MAIN_PAVED' },
+  { id: 2, from: 2, to: 10, distance: 40, walkable: true, accessible: true, stairs: false, hasFootpath: true, pathType: 'PAVED' },
+  { id: 3, from: 2, to: 3, distance: 90, walkable: true, accessible: true, stairs: false, hasFootpath: true, pathType: 'MAIN_PAVED' },
+  { id: 4, from: 3, to: 4, distance: 85, walkable: true, accessible: true, stairs: false, hasFootpath: true, pathType: 'PAVED' },
+  { id: 5, from: 3, to: 6, distance: 75, walkable: true, accessible: true, stairs: false, hasFootpath: true, pathType: 'PAVED' },
+  { id: 6, from: 4, to: 5, distance: 80, walkable: true, accessible: true, stairs: false, hasFootpath: true, pathType: 'PAVED' },
+  { id: 7, from: 4, to: 8, distance: 120, walkable: true, accessible: true, stairs: false, hasFootpath: false, pathType: 'ROAD_NO_FOOTPATH' },
+  { id: 8, from: 5, to: 7, distance: 95, walkable: true, accessible: true, stairs: false, hasFootpath: true, pathType: 'PAVED' },
+  { id: 9, from: 6, to: 7, distance: 90, walkable: true, accessible: false, stairs: true, hasFootpath: true, pathType: 'STAIRS_SHORTCUT' },
+  { id: 10, from: 5, to: 9, distance: 110, walkable: true, accessible: true, stairs: false, hasFootpath: false, pathType: 'ROAD_NO_FOOTPATH' },
+  { id: 11, from: 7, to: 9, distance: 130, walkable: true, accessible: true, stairs: false, hasFootpath: true, pathType: 'PAVED' },
+  { id: 12, from: 8, to: 5, distance: 140, walkable: true, accessible: true, stairs: false, hasFootpath: false, pathType: 'ROAD_NO_FOOTPATH' }
 ];

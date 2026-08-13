@@ -1,22 +1,67 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import CampusMap from './components/Map/CampusMap';
 import SearchBar from './components/Search/SearchBar';
-import CategoryFilter from './components/Search/CategoryFilter';
+import PlaceSidebar from './components/Navigation/PlaceSidebar';
 import BuildingSidePanel from './components/Building/BuildingSidePanel';
 import NavigationPanel from './components/Navigation/NavigationPanel';
 import NodeInspector from './components/Admin/NodeInspector';
-import { BUILDINGS, NAVIGATION_NODES as INITIAL_NODES, NAVIGATION_EDGES as INITIAL_EDGES } from './data/presidencyData';
+import { BUILDINGS as INITIAL_BUILDINGS, NAVIGATION_NODES as INITIAL_NODES, NAVIGATION_EDGES as INITIAL_EDGES } from './data/presidencyData';
 import { findNearestNode, findShortestPath } from './utils/aStarPathfinder';
 import { Locate, Crosshair } from 'lucide-react';
+import logo from './assets/logo.png';
 
 export default function App() {
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('ALL');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Custom Graph State
-  const [nodes, setNodes] = useState(INITIAL_NODES);
-  const [edges, setEdges] = useState(INITIAL_EDGES);
+  // Buildings / Locations State with LocalStorage persistence
+  const [buildings, setBuildings] = useState(() => {
+    const saved = localStorage.getItem('presidency_buildings');
+    return saved ? JSON.parse(saved) : INITIAL_BUILDINGS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('presidency_buildings', JSON.stringify(buildings));
+  }, [buildings]);
+
+  // Custom Graph Nodes & Edges State with LocalStorage persistence
+  const [nodes, setNodes] = useState(() => {
+    const saved = localStorage.getItem('presidency_nodes');
+    return saved ? JSON.parse(saved) : INITIAL_NODES;
+  });
+
+  const [edges, setEdges] = useState(() => {
+    const saved = localStorage.getItem('presidency_edges');
+    return saved ? JSON.parse(saved) : INITIAL_EDGES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('presidency_nodes', JSON.stringify(nodes));
+  }, [nodes]);
+
+  useEffect(() => {
+    localStorage.setItem('presidency_edges', JSON.stringify(edges));
+  }, [edges]);
+
+  // Merge default/custom buildings with user-created graph nodes for complete location coverage
+  const allPlaces = useMemo(() => {
+    const customPlaces = nodes
+      .filter(n => n.type !== 'WAYPOINT' && !buildings.some(b => b.nearestNodeId === n.id || b.id === n.id))
+      .map(n => ({
+        id: `custom-${n.id}`,
+        name: n.name,
+        code: `LOC-${n.id}`,
+        category: n.type || 'LOCATION',
+        latitude: n.latitude,
+        longitude: n.longitude,
+        description: `Campus location point at Lat: ${n.latitude.toFixed(6)}, Lng: ${n.longitude.toFixed(6)}.`,
+        imageUrl: 'https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=800&q=80',
+        facilities: ['Campus Point', 'Walkway Connector'],
+        nearestNodeId: n.id
+      }));
+    return [...buildings, ...customPlaces];
+  }, [buildings, nodes]);
 
   // Path Connection Node Selection State
   const [selectedFromNode, setSelectedFromNode] = useState(null);
@@ -37,10 +82,6 @@ export default function App() {
   const [navOptions, setNavOptions] = useState({ avoidStairs: false, wheelchairOnly: false });
   const [routeResult, setRouteResult] = useState(null);
 
-  const filteredBuildings = activeCategory === 'ALL'
-    ? BUILDINGS
-    : BUILDINGS.filter(b => b.category === activeCategory);
-
   useEffect(() => { handleLocateUser(); }, []);
 
   const handleLocateUser = () => {
@@ -60,7 +101,82 @@ export default function App() {
     setSelectedBuilding(null);
   };
 
-  const handleAddNode = (newNode) => setNodes(prev => [...prev, newNode]);
+  // Building / Location Handlers
+  const handleMoveBuilding = (buildingId, newLat, newLng) => {
+    setBuildings(prev => prev.map(b =>
+      b.id === buildingId ? { ...b, latitude: newLat, longitude: newLng } : b
+    ));
+
+    // Update selected building if currently active
+    if (selectedBuilding && selectedBuilding.id === buildingId) {
+      setSelectedBuilding(prev => prev ? { ...prev, latitude: newLat, longitude: newLng } : null);
+    }
+
+    // Sync nearest node position if linked
+    const targetBuilding = buildings.find(b => b.id === buildingId);
+    if (targetBuilding && targetBuilding.nearestNodeId) {
+      handleMoveNode(targetBuilding.nearestNodeId, newLat, newLng);
+    } else if (typeof buildingId === 'string' && buildingId.startsWith('custom-')) {
+      const nodeId = parseInt(buildingId.replace('custom-', ''));
+      handleMoveNode(nodeId, newLat, newLng);
+    }
+  };
+
+  const handleEditBuilding = (buildingId, updatedData) => {
+    setBuildings(prev => prev.map(b =>
+      b.id === buildingId ? { ...b, ...updatedData } : b
+    ));
+
+    if (selectedBuilding && selectedBuilding.id === buildingId) {
+      setSelectedBuilding(prev => prev ? { ...prev, ...updatedData } : null);
+    }
+
+    if (updatedData.latitude && updatedData.longitude) {
+      const targetBuilding = buildings.find(b => b.id === buildingId);
+      if (targetBuilding && targetBuilding.nearestNodeId) {
+        handleMoveNode(targetBuilding.nearestNodeId, updatedData.latitude, updatedData.longitude);
+      }
+    }
+  };
+
+  const handleDeleteBuilding = (buildingId) => {
+    const targetBuilding = buildings.find(b => b.id === buildingId);
+    setBuildings(prev => prev.filter(b => b.id !== buildingId));
+
+    if (selectedBuilding && selectedBuilding.id === buildingId) {
+      setSelectedBuilding(null);
+    }
+
+    if (targetBuilding && targetBuilding.nearestNodeId) {
+      handleDeleteNode(targetBuilding.nearestNodeId);
+    } else if (typeof buildingId === 'string' && buildingId.startsWith('custom-')) {
+      const nodeId = parseInt(buildingId.replace('custom-', ''));
+      handleDeleteNode(nodeId);
+    }
+  };
+
+  // Node & Edge Handlers
+  const handleAddNode = (newNode) => {
+    setNodes(prev => [...prev, newNode]);
+
+    // If node is an Entrance/Gate/Junction, auto-add as a Place building too
+    if (newNode.type !== 'WAYPOINT') {
+      const newBuilding = {
+        id: `b-${newNode.id}`,
+        name: newNode.name,
+        code: `GATE-${newNode.id}`,
+        category: newNode.type || 'ADMIN',
+        latitude: newNode.latitude,
+        longitude: newNode.longitude,
+        description: `Campus location ${newNode.name} added at Lat: ${newNode.latitude.toFixed(6)}, Lng: ${newNode.longitude.toFixed(6)}.`,
+        imageUrl: 'https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=800&q=80',
+        facilities: ['Entrance Access', 'Campus Checkpoint'],
+        nearestNodeId: newNode.id
+      };
+      setBuildings(prev => [...prev, newBuilding]);
+    }
+  };
+
   const handleAddEdge = (newEdge) => setEdges(prev => [...prev, newEdge]);
 
   const handleMoveNode = (nodeId, newLat, newLng) => {
@@ -78,6 +194,27 @@ export default function App() {
 
   const handleDeleteEdge = (edgeId) => {
     setEdges(prev => prev.filter(e => e.id !== edgeId));
+  };
+
+  const handleClearAllData = () => {
+    setNodes([]);
+    setEdges([]);
+    setBuildings([]);
+    setSelectedBuilding(null);
+    setSelectedFromNode(null);
+    setSelectedToNode(null);
+    localStorage.removeItem('presidency_nodes');
+    localStorage.removeItem('presidency_edges');
+    localStorage.removeItem('presidency_buildings');
+  };
+
+  const handleResetDefaultData = () => {
+    setNodes(INITIAL_NODES);
+    setEdges(INITIAL_EDGES);
+    setBuildings(INITIAL_BUILDINGS);
+    localStorage.setItem('presidency_nodes', JSON.stringify(INITIAL_NODES));
+    localStorage.setItem('presidency_edges', JSON.stringify(INITIAL_EDGES));
+    localStorage.setItem('presidency_buildings', JSON.stringify(INITIAL_BUILDINGS));
   };
 
   const handleSelectGraphNode = (node, explicitType = null) => {
@@ -107,34 +244,31 @@ export default function App() {
         if (nearest.node) startNodeId = nearest.node.id;
       }
     } else {
-      const origBuilding = BUILDINGS.find(b => b.id === originId);
-      if (origBuilding) startNodeId = origBuilding.nearestNodeId;
+      const origBuilding = allPlaces.find(b => b.id === originId);
+      if (origBuilding) startNodeId = origBuilding.nearestNodeId || origBuilding.id;
     }
 
-    const destBuilding = BUILDINGS.find(b => b.id === destinationId);
+    const destBuilding = allPlaces.find(b => b.id === destinationId);
     if (!destBuilding) return;
 
-    const pathResult = findShortestPath(startNodeId, destBuilding.nearestNodeId, nodes, edges, navOptions);
+    const targetNodeId = destBuilding.nearestNodeId || destBuilding.id;
+    const pathResult = findShortestPath(startNodeId, targetNodeId, nodes, edges, navOptions);
     setRouteResult(pathResult);
-  }, [isNavigating, originId, destinationId, navOptions, userLocation, nodes, edges]);
+  }, [isNavigating, originId, destinationId, navOptions, userLocation, nodes, edges, allPlaces]);
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
       {/* Top Header */}
       <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px', zIndex: 20, display: 'flex', flexDirection: 'column', gap: '12px', pointerEvents: 'none' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', width: '100%' }}>
-          {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', width: '100%' }}>
+          {/* Brand Header with Presidency Logo */}
           <div className="glass-panel" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 18px', borderRadius: '16px' }}>
-            <div style={{ background: 'linear-gradient(135deg, #38bdf8, #818cf8)', width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f172a', fontWeight: '800', fontSize: '18px' }}>P</div>
-            <div>
-              <h1 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.1rem', fontWeight: '700', color: '#fff' }}>Presidency Navigator</h1>
-              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Bengaluru Campus Map & Custom Paths</div>
-            </div>
+            <img src={logo} alt="Presidency University Logo" style={{ height: '36px', objectFit: 'contain' }} />
           </div>
 
           {/* Search */}
           <div style={{ pointerEvents: 'auto', flex: 1, display: 'flex', justifyContent: 'center' }}>
-            <SearchBar buildings={BUILDINGS} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSelectBuilding={(b) => setSelectedBuilding(b)} />
+            <SearchBar buildings={allPlaces} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onSelectBuilding={(b) => setSelectedBuilding(b)} />
           </div>
 
           {/* Buttons */}
@@ -150,7 +284,7 @@ export default function App() {
                 cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem'
               }}
             >
-              <Crosshair size={18} /> {isInspectorActive ? 'Inspector ON 🎯' : 'Inspect Coords 🛠️'}
+              <Crosshair size={18} /> {isInspectorActive ? 'Inspector ON' : 'Inspect Coords'}
             </button>
 
             <button onClick={handleLocateUser} className="glass-panel"
@@ -159,21 +293,30 @@ export default function App() {
             </button>
           </div>
         </div>
-
-        {!isNavigating && (
-          <div style={{ pointerEvents: 'auto', maxWidth: '800px' }}>
-            <CategoryFilter activeCategory={activeCategory} onSelectCategory={(catId) => setActiveCategory(catId)} />
-          </div>
-        )}
       </div>
 
-      {/* Map */}
+      {/* Select Place Left Sidebar */}
+      {!isNavigating && (
+        <PlaceSidebar
+          buildings={allPlaces}
+          selectedBuilding={selectedBuilding}
+          onSelectBuilding={(b) => setSelectedBuilding(b)}
+          onStartNavigation={handleStartNavigationTo}
+          isOpen={isSidebarOpen}
+          setIsOpen={setIsSidebarOpen}
+        />
+      )}
+
+      {/* Map Viewport */}
       <CampusMap
-        buildings={filteredBuildings}
+        buildings={allPlaces}
         selectedBuilding={selectedBuilding}
         onSelectBuilding={(b) => setSelectedBuilding(b)}
+        onMoveBuilding={handleMoveBuilding}
+        onDeleteBuilding={handleDeleteBuilding}
         userLocation={userLocation}
         routeCoordinates={routeResult ? routeResult.coordinates : []}
+        routeSegments={routeResult ? routeResult.segments : []}
         onNavigateTo={handleStartNavigationTo}
         isInspectorActive={isInspectorActive}
         onMapClick={(latlng) => setClickedLatLng(latlng)}
@@ -187,13 +330,14 @@ export default function App() {
         onDeleteNode={handleDeleteNode}
       />
 
-      {/* Inspector */}
+      {/* Admin Node & Path Inspector */}
       {isInspectorActive && (
         <NodeInspector
           clickedLatLng={clickedLatLng}
           onClearClickedLatLng={() => setClickedLatLng(null)}
           nodes={nodes}
           edges={edges}
+          buildings={allPlaces}
           onAddNode={handleAddNode}
           onAddEdge={handleAddEdge}
           selectedFromNode={selectedFromNode}
@@ -203,15 +347,19 @@ export default function App() {
           onResetSelectedNodes={handleResetSelectedNodes}
           onDeleteNode={handleDeleteNode}
           onDeleteEdge={handleDeleteEdge}
+          onClearAllData={handleClearAllData}
+          onResetDefaultData={handleResetDefaultData}
         />
       )}
 
-      {/* Building Side Panel */}
+      {/* Building Side Panel (Pops up on the right when any location is clicked on map) */}
       {!isNavigating && selectedBuilding && (
         <BuildingSidePanel
           building={selectedBuilding}
           onClose={() => setSelectedBuilding(null)}
           onStartNavigation={handleStartNavigationTo}
+          onEditBuilding={handleEditBuilding}
+          onDeleteBuilding={handleDeleteBuilding}
           userLocation={userLocation}
         />
       )}
@@ -219,7 +367,7 @@ export default function App() {
       {/* Navigation Panel */}
       {isNavigating && (
         <NavigationPanel
-          buildings={BUILDINGS}
+          buildings={allPlaces}
           originId={originId} setOriginId={setOriginId}
           destinationId={destinationId} setDestinationId={setDestinationId}
           routeResult={routeResult}

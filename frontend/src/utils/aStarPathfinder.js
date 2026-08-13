@@ -93,10 +93,20 @@ export function findShortestPath(startNodeId, targetNodeId, nodes, edges, option
         curr = cameFrom.get(curr);
       }
 
-      // Calculate total actual physical distance
+      // Build edge map lookup for quick retrieval
+      const edgeLookup = new Map();
+      edges.forEach((e) => {
+        const k1 = `${e.from}-${e.to}`;
+        const k2 = `${e.to}-${e.from}`;
+        edgeLookup.set(k1, e);
+        edgeLookup.set(k2, e);
+      });
+
+      // Calculate total distance, coordinates, steps, and segments
       let totalDistance = 0;
       const coordinates = [];
       const steps = [];
+      const segments = [];
 
       for (let i = 0; i < pathNodes.length; i++) {
         const node = pathNodes[i];
@@ -107,6 +117,20 @@ export function findShortestPath(startNodeId, targetNodeId, nodes, edges, option
           const legDist = Math.round(haversineDistance(prev.latitude, prev.longitude, node.latitude, node.longitude));
           totalDistance += legDist;
           steps.push(`Walk ${legDist}m towards ${node.name}`);
+
+          const edge = edgeLookup.get(`${prev.id}-${node.id}`);
+          const hasFootpath = edge ? (edge.hasFootpath ?? true) : true;
+
+          segments.push({
+            from: prev,
+            to: node,
+            coordinates: [
+              [prev.latitude, prev.longitude],
+              [node.latitude, node.longitude]
+            ],
+            hasFootpath,
+            edge
+          });
         } else {
           steps.push(`Start at ${node.name}`);
         }
@@ -118,6 +142,7 @@ export function findShortestPath(startNodeId, targetNodeId, nodes, edges, option
       return {
         pathNodes,
         coordinates,
+        segments,
         totalDistance,
         walkingMinutes,
         steps
